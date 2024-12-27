@@ -7,22 +7,17 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS configuration
-const corsOptions = {
-    origin: 'https://ytsummit.framer.website',
-    methods: ['POST', 'GET', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept'],
-    credentials: true
-};
-
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    res.header('Access-Control-Allow-Origin', 'https://ytsummit.framer.website');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     
+    // Handle preflight requests
     if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+        return res.status(200).json({});
     }
+    
     next();
 });
 

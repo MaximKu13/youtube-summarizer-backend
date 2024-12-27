@@ -153,5 +153,12 @@ Format your response with:
         });
     }
 });
-
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'YouTube Summarizer API is running',
+        endpoints: {
+            videoSummary: '/api/video-summary'
+        }
+    });
+});
 module.exports = app;

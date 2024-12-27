@@ -6,27 +6,17 @@ const he = require('he'); // Library for decoding HTML entities
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// CORS configuration
+const corsOptions = {
+    origin: 'https://ytsummit.framer.website',
+    methods: ['POST', 'GET', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept'],
+    credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
-
-app.get('/', (req, res) => {
-    res.json({ 
-        message: 'YouTube Summarizer API is running',
-        endpoints: {
-            videoSummary: '/api/video-summary'
-        }
-    });
-});
-
-// Your existing video-summary route
-app.post('/api/video-summary', async (req, res) => {
-    // ... your existing code ...
-});
-
-// Add this for handling OPTIONS requests (CORS preflight)
-app.options('/api/video-summary', (req, res) => {
-    res.status(200).end();
-});
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -78,6 +68,16 @@ function formatSummary(summary) {
         .join('\n'); // Combine into a single HTML string
 }
 
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'YouTube Summarizer API is running',
+        endpoints: {
+            videoSummary: '/api/video-summary'
+        }
+    });
+});
+
 // API endpoint to get video summary
 app.post('/api/video-summary', async (req, res) => {
     console.log('Received request body:', req.body);
@@ -104,7 +104,7 @@ app.post('/api/video-summary', async (req, res) => {
 
         // Process the transcript with OpenAI for formatting and proofreading
         const processedTranscriptResponse = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4-turbo-preview",
             messages: [{
                 role: "system",
                 content: `You are a professional editor. Your task is to proofread and improve the formatting of this transcript.
@@ -145,7 +145,7 @@ Format your response with:
 
         // Get summary from OpenAI
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4-turbo-preview",
             messages: [{
                 role: "user",
                 content: `Here is the transcript of a video. Please analyze it and provide a concise summary of the key insights, main points, and takeaways. Highlight any actionable advice, themes, or data mentioned:\n\n${processedTranscript}`
@@ -172,12 +172,11 @@ Format your response with:
         });
     }
 });
-app.get('/', (req, res) => {
-    res.json({ 
-        message: 'YouTube Summarizer API is running',
-        endpoints: {
-            videoSummary: '/api/video-summary'
-        }
-    });
+
+// Handle OPTIONS preflight requests
+app.options('/api/video-summary', (req, res) => {
+    res.status(200).end();
 });
+
+// Export for Vercel
 module.exports = app;

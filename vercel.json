@@ -8,9 +8,14 @@
   ],
   "routes": [
     {
+      "src": "/",
+      "dest": "server.js",
+      "methods": ["GET"]
+    },
+    {
       "src": "/api/video-summary",
-      "methods": ["POST", "OPTIONS"],
-      "dest": "server.js"
+      "dest": "server.js",
+      "methods": ["POST", "OPTIONS"]
     },
     {
       "src": "/(.*)",

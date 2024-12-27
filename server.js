@@ -15,12 +15,18 @@ const corsOptions = {
     credentials: true
 };
 
-app.use(cors(corsOptions));
-app.use(express.json());
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    next();
 });
+
+app.use(express.json());
 
 // Function to extract video ID from a YouTube URL
 function extractVideoId(url) {

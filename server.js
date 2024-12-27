@@ -9,6 +9,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'YouTube Summarizer API is running',
+        endpoints: {
+            videoSummary: '/api/video-summary'
+        }
+    });
+});
+
+// Your existing video-summary route
+app.post('/api/video-summary', async (req, res) => {
+    // ... your existing code ...
+});
+
+// Add this for handling OPTIONS requests (CORS preflight)
+app.options('/api/video-summary', (req, res) => {
+    res.status(200).end();
+});
+
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });

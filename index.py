@@ -16,7 +16,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins in development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,74 +58,38 @@ def format_summary(text: str) -> str:
 def get_transcript(video_id: str):
     """Get transcript for a video."""
     try:
-        print(f"Attempting to get transcript for video ID: {video_id}")
-        # Try direct method first
-        try:
-            print("Attempting direct transcript fetch")
-            transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-            print("Successfully got transcript via direct method")
-        except Exception as direct_error:
-            print(f"Direct fetch failed: {str(direct_error)}")
-            # Try listing all transcripts
-            print("Attempting to list all transcripts")
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            print("Got transcript list")
-            
-            # Try all available transcripts
-            available_transcripts = list(transcript_list._manually_created_transcripts.values()) + \
-                                 list(transcript_list._generated_transcripts.values())
-            
-            print(f"Found {len(available_transcripts)} available transcripts")
-            
-            if not available_transcripts:
-                raise Exception("No transcripts available")
-                
-            # Try each available transcript
-            for transcript in available_transcripts:
-                try:
-                    print(f"Trying transcript in language: {transcript.language_code}")
-                    if transcript.language_code != 'en':
-                        print("Translating to English")
-                        transcript = transcript.translate('en')
-                    transcript_data = transcript.fetch()
-                    print("Successfully fetched transcript")
-                    break
-                except Exception as e:
-                    print(f"Failed to fetch transcript: {str(e)}")
-                    continue
-            else:
-                raise Exception("Could not fetch any transcript")
-
-        # Convert transcript to paragraphs
-        print("Processing transcript data")
-        paragraphs = []
-        current_paragraph = []
+        print(f"Getting transcript list for video ID: {video_id}")
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         
-        for entry in transcript_data:
-            text = entry.get('text', '').strip()
-            if not text:
-                continue
-                
-            current_paragraph.append(text)
+        for transcript in transcript_list:
+            print("Transcript metadata:")
+            print(
+                f"Video ID: {transcript.video_id}",
+                f"Language: {transcript.language}",
+                f"Language code: {transcript.language_code}",
+                f"Is generated: {transcript.is_generated}",
+                f"Is translatable: {transcript.is_translatable}"
+            )
             
-            # Start new paragraph after reasonable length or if ends with period
-            if len(' '.join(current_paragraph)) > 150 or text.endswith('.'):
-                paragraphs.append(' '.join(current_paragraph))
-                current_paragraph = []
-        
-        # Add any remaining text
-        if current_paragraph:
-            paragraphs.append(' '.join(current_paragraph))
+            # Get the transcript data
+            transcript_data = transcript.fetch()
+            print("Successfully fetched transcript data")
             
-        print(f"Created {len(paragraphs)} paragraphs")
-        
-        if not paragraphs:
-            raise Exception("No text content found in transcript")
+            # If not English, translate
+            if transcript.language_code != 'en':
+                print(f"Translating from {transcript.language_code} to English")
+                translated_transcript = transcript.translate('en')
+                transcript_data = translated_transcript.fetch()
+                print("Translation completed")
             
-        return transcript_data, paragraphs
-        
+            # Process into paragraphs
+            full_text = ' '.join(t.get('text', '') for t in transcript_data)
+            paragraphs = [p.strip() for p in full_text.split('.') if p.strip()]
+            
+            return transcript_data, paragraphs
+            
     except Exception as e:
-        print(f"Final error in get_transcript: {str(e)}")
+        print(f"Error in get_transcript: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to get transcript: {str(e)}")
 
 @app.get("/")

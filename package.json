@@ -11,6 +11,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.21.2"
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "he": "^1.2.0",
+    "openai": "^4.77.0",
+    "youtube-transcript": "^1.2.1"
   }
 }

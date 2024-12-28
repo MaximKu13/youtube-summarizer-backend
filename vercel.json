@@ -8,6 +8,10 @@
   ],
   "routes": [
     {
+      "src": "/api/video-summary",
+      "dest": "index.py"
+    },
+    {
       "src": "/(.*)",
       "dest": "index.py"
     }

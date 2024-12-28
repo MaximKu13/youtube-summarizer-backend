@@ -1,6 +1,6 @@
-youtube-transcript-api
-openai
 fastapi
 pydantic
 uvicorn
 python-dotenv
+openai
+google-api-python-client

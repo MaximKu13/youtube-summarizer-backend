@@ -61,36 +61,72 @@ def get_transcript(video_id: str):
         print(f"Getting transcript list for video ID: {video_id}")
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         
-        for transcript in transcript_list:
-            print("Transcript metadata:")
-            print(
-                f"Video ID: {transcript.video_id}",
-                f"Language: {transcript.language}",
-                f"Language code: {transcript.language_code}",
-                f"Is generated: {transcript.is_generated}",
-                f"Is translatable: {transcript.is_translatable}"
-            )
+        # Get the first transcript from the list
+        print("Getting available transcripts...")
+        available_transcripts = list(transcript_list)
+        
+        if not available_transcripts:
+            raise Exception("No transcripts found")
             
-            # Get the transcript data
-            transcript_data = transcript.fetch()
-            print("Successfully fetched transcript data")
+        transcript = available_transcripts[0]
+        print(f"Found transcript: {transcript.language_code}")
+        
+        # Get the transcript data
+        transcript_data = transcript.fetch()
+        print("Successfully fetched transcript data")
+        
+        # If not English, translate
+        if transcript.language_code != 'en':
+            print(f"Translating from {transcript.language_code} to English")
+            transcript_data = transcript.translate('en').fetch()
+            print("Translation completed")
+        
+        # Process into paragraphs with better text handling
+        paragraphs = []
+        current_paragraph = []
+        
+        for entry in transcript_data:
+            text = entry.get('text', '').strip()
+            if not text:
+                continue
+                
+            current_paragraph.append(text)
             
-            # If not English, translate
-            if transcript.language_code != 'en':
-                print(f"Translating from {transcript.language_code} to English")
-                translated_transcript = transcript.translate('en')
-                transcript_data = translated_transcript.fetch()
-                print("Translation completed")
+            # Start new paragraph after reasonable length or if ends with period
+            if len(' '.join(current_paragraph)) > 150 or text.endswith('.'):
+                paragraphs.append(' '.join(current_paragraph))
+                current_paragraph = []
+        
+        # Add any remaining text
+        if current_paragraph:
+            paragraphs.append(' '.join(current_paragraph))
             
-            # Process into paragraphs
-            full_text = ' '.join(t.get('text', '') for t in transcript_data)
-            paragraphs = [p.strip() for p in full_text.split('.') if p.strip()]
+        print(f"Created {len(paragraphs)} paragraphs")
+        
+        if not paragraphs:
+            raise Exception("No text content found in transcript")
             
-            return transcript_data, paragraphs
+        return transcript_data, paragraphs
             
     except Exception as e:
-        print(f"Error in get_transcript: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to get transcript: {str(e)}")
+        error_msg = str(e)
+        print(f"Error in get_transcript: {error_msg}")
+        # Make the error message more user-friendly
+        if "Transcript is disabled" in error_msg:
+            raise HTTPException(
+                status_code=400,
+                detail="This video doesn't have available captions. Please try another video."
+            )
+        elif "No transcripts found" in error_msg:
+            raise HTTPException(
+                status_code=400,
+                detail="No captions found for this video. Please try another video."
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error accessing video captions: {error_msg}"
+            )
 
 @app.get("/")
 async def read_root():
@@ -112,12 +148,14 @@ async def get_video_summary(request: VideoRequest):
             # Get transcript
             transcript_data, paragraphs = get_transcript(video_id)
             print(f"Successfully got transcript with {len(paragraphs)} paragraphs")
+        except HTTPException as he:
+            raise he
         except Exception as transcript_error:
             print(f"Transcript error: {str(transcript_error)}")
-            error_message = str(transcript_error)
-            if "Subtitles are disabled" in error_message:
-                error_message = "Could not access subtitles for this video. Please try another video or contact support if you believe this is an error."
-            raise HTTPException(status_code=400, detail=error_message)
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to process video transcript. Please try another video."
+            )
 
         # Join paragraphs for OpenAI processing
         full_text = ' '.join(paragraphs)

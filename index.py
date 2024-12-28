@@ -16,7 +16,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ytsummit.framer.website"],
+    allow_origins=["*"],  # Update this with specific domains in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

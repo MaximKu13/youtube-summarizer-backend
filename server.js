@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const { YoutubeTranscript } = require('youtube-transcript');
 const OpenAI = require('openai');
-const he = require('he'); // Library for decoding HTML entities
+const he = require('he');
 require('dotenv').config();
 
 const app = express();
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
 
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', 'https://ytsummit.framer.website');
@@ -40,33 +43,24 @@ function cleanText(text) {
         .replace(/\s+/g, ' ');   // Replace multiple spaces with a single space
 }
 
-// Refine summary formatting to preserve titles, bold them, and format paragraphs
+// Refine summary formatting
 function formatSummary(summary) {
     return summary
-        .split('\n') // Split into lines
+        .split('\n')
         .map(line => {
             line = line.trim();
-
-            if (line.length === 0) return ''; // Skip empty lines
-
-            // Replace Markdown **bold** with HTML <strong>
+            if (line.length === 0) return '';
             line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-
-            // Titles
             if (/^(###|##|#|\*\*).*/.test(line) || line.endsWith(':') || line.toUpperCase() === line) {
                 return `<p style="margin-top: 20px; margin-bottom: 10px;"><strong>${line.replace(/[#*]/g, '').trim()}</strong></p>`;
             }
-
-            // Bullet points
             if (/^[-•]\s|^\d+\./.test(line)) {
                 return `<p style="margin-left: 20px; margin-bottom: 10px;">${line}</p>`;
             }
-
-            // Regular paragraphs
             return `<p style="margin-bottom: 15px;">${line}</p>`;
         })
-        .filter(Boolean) // Remove empty results
-        .join('\n'); // Combine into a single HTML string
+        .filter(Boolean)
+        .join('\n');
 }
 
 // Root endpoint
@@ -93,9 +87,31 @@ app.post('/api/video-summary', async (req, res) => {
             return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        // Fetch the transcript using the video ID
-        const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-        console.log('Transcript fetched successfully');
+        // Add more detailed logging for transcript fetch
+        console.log('Attempting to fetch transcript for video:', videoId);
+        let transcript;
+        try {
+            transcript = await YoutubeTranscript.fetchTranscript(videoId, {
+                lang: 'en',  // Try to get English captions first
+                servers: ['https://www.youtube.com'] // Specify YouTube servers explicitly
+            });
+            console.log('Transcript fetch successful');
+        } catch (transcriptError) {
+            console.error('Transcript fetch error:', transcriptError);
+            // Try alternate methods if available
+            try {
+                transcript = await YoutubeTranscript.fetchTranscript(videoId, {
+                    lang: 'auto', // Try auto-detection
+                    servers: ['https://www.youtube.com']
+                });
+                console.log('Transcript fetch successful with auto language');
+            } catch (fallbackError) {
+                console.error('Fallback transcript fetch error:', fallbackError);
+                return res.status(400).json({ 
+                    error: 'Unable to fetch video transcript. Error: ' + transcriptError.message
+                });
+            }
+        }
 
         // Combine transcript into a single text block and clean it
         let transcriptText = transcript
@@ -166,10 +182,14 @@ Format your response with:
         });
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            details: error.details || 'No additional details'
+        });
         res.status(500).json({ 
-            error: error.message,
-            details: 'Failed to process video'
+            error: 'Failed to process video',
+            details: error.message
         });
     }
 });

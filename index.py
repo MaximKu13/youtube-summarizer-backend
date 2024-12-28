@@ -58,45 +58,76 @@ def format_summary(text: str) -> str:
 def get_transcript(video_id: str):
     """Get transcript for a video."""
     try:
+        print(f"Attempting to get transcript list for video ID: {video_id}")
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        print("Successfully got transcript list")
         
         # Try to get English transcript first
         try:
+            print("Attempting to find English transcript")
             transcript = transcript_list.find_transcript(['en'])
-        except:
+            print("Found English transcript")
+        except Exception as e:
+            print(f"Error finding English transcript: {str(e)}")
             # If no English transcript, get the first available one and translate it
             try:
+                print("Attempting to find manually created transcript")
                 transcript = transcript_list.find_manually_created_transcript()
-            except:
+                print("Found manually created transcript")
+            except Exception as manual_error:
+                print(f"Error finding manual transcript: {str(manual_error)}")
+                print("Attempting to find auto-generated transcript")
                 transcript = transcript_list.find_generated_transcript()
+                print("Found auto-generated transcript")
                 
             if transcript.language_code != 'en':
+                print(f"Translating transcript from {transcript.language_code} to English")
                 transcript = transcript.translate('en')
+                print("Translation complete")
         
         # Fetch the transcript
+        print("Fetching transcript data")
         transcript_data = transcript.fetch()
+        print("Successfully fetched transcript data")
         
         # Convert transcript to paragraphs
         text = ' '.join(t.get('text', '') for t in transcript_data)
         paragraphs = [t for t in text.split('\n') if t.strip()]
+        print(f"Created {len(paragraphs)} paragraphs from transcript")
         
         return transcript_data, paragraphs
     except Exception as e:
+        print(f"Error in get_transcript: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/")
+async def read_root():
+    return {"message": "YouTube Summarizer API is running"}
 
 @app.post("/api/video-summary")
 async def get_video_summary(request: VideoRequest):
     try:
+        print(f"Received URL: {request.videoUrl}")
+        
         # Extract video ID
         video_id = extract_video_id(request.videoUrl)
+        print(f"Extracted video ID: {video_id}")
+        
         if not video_id:
             raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-        # Get transcript
-        transcript_data, paragraphs = get_transcript(video_id)
-        
+        try:
+            # Get transcript
+            print(f"Attempting to get transcript for video ID: {video_id}")
+            transcript_data, paragraphs = get_transcript(video_id)
+            print(f"Successfully got transcript with {len(paragraphs)} paragraphs")
+        except Exception as transcript_error:
+            print(f"Transcript error: {str(transcript_error)}")
+            raise HTTPException(status_code=400, detail=f"Failed to get transcript: {str(transcript_error)}")
+
         # Join paragraphs for OpenAI processing
         full_text = ' '.join(paragraphs)
+        print("Processing with OpenAI...")
         
         # Process with OpenAI
         completion = await openai.chat.completions.create(
@@ -112,6 +143,7 @@ async def get_video_summary(request: VideoRequest):
 
         summary = completion.choices[0].message.content
         formatted_summary = format_summary(summary)
+        print("Successfully generated summary")
 
         return {
             "transcript": paragraphs,
@@ -119,8 +151,10 @@ async def get_video_summary(request: VideoRequest):
         }
     
     except HTTPException as e:
+        print(f"HTTP Exception: {str(e)}")
         raise e
     except Exception as e:
+        print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

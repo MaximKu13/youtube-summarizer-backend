@@ -1,7 +1,15 @@
+// config.js
 const config = {
-  apiUrl: process.env.NODE_ENV === 'production' 
-    ? 'youtube-summarizer-backend-psi.vercel.app' // Replace with your actual Vercel backend URL
-    : 'http://localhost:3000/api'
+  development: {
+    apiUrl: 'http://localhost:3000/api'  // Local development
+  },
+  production: {
+    apiUrl: 'youtube-summarizer-backend-psi.vercel.app'  // Vercel deployment URL
+  }
 };
 
-export default config;
+export default {
+  apiUrl: process.env.NODE_ENV === 'production' 
+    ? config.production.apiUrl 
+    : config.development.apiUrl
+};

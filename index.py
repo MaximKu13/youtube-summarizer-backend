@@ -1,15 +1,17 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from youtube_transcript_api import YouTubeTranscriptApi
 import re
 import openai
 from dotenv import load_dotenv
 import os
+import googleapiclient.discovery
+import html
 
 # Load environment variables
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
 app = FastAPI()
 
@@ -20,6 +22,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Initialize YouTube API client
+youtube = googleapiclient.discovery.build(
+    'youtube', 'v3',
+    developerKey=YOUTUBE_API_KEY
 )
 
 class VideoRequest(BaseModel):
@@ -56,71 +64,75 @@ def format_summary(text: str) -> str:
     return '\n'.join(formatted_lines)
 
 def get_transcript(video_id: str):
-    """Get transcript for a video."""
+    """Get transcript using YouTube API."""
     try:
-        print(f"Getting transcript list for video ID: {video_id}")
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        print(f"Getting captions for video ID: {video_id}")
         
-        # Get the first transcript from the list
-        print("Getting available transcripts...")
-        available_transcripts = list(transcript_list)
+        # Get caption tracks
+        captions_response = youtube.captions().list(
+            part="snippet",
+            videoId=video_id
+        ).execute()
+
+        if not captions_response.get('items'):
+            raise Exception("No captions found for this video")
+
+        # Try to find English captions first
+        caption_id = None
+        for caption in captions_response['items']:
+            language = caption['snippet']['language']
+            if language == 'en':
+                caption_id = caption['id']
+                break
         
-        if not available_transcripts:
-            raise Exception("No transcripts found")
-            
-        transcript = available_transcripts[0]
-        print(f"Found transcript: {transcript.language_code}")
+        # If no English captions, take the first available
+        if not caption_id and captions_response['items']:
+            caption_id = captions_response['items'][0]['id']
+
+        if not caption_id:
+            raise Exception("No suitable captions found")
+
+        # Download the caption track
+        caption_track = youtube.captions().download(
+            id=caption_id,
+            tfmt='srt'
+        ).execute()
+
+        # Parse the SRT format and convert to paragraphs
+        caption_text = html.unescape(caption_track.decode('utf-8'))
         
-        # Get the transcript data
-        transcript_data = transcript.fetch()
-        print("Successfully fetched transcript data")
-        
-        # If not English, translate
-        if transcript.language_code != 'en':
-            print(f"Translating from {transcript.language_code} to English")
-            transcript_data = transcript.translate('en').fetch()
-            print("Translation completed")
-        
-        # Process into paragraphs with better text handling
+        # Simple SRT parsing (you might want to use a proper SRT parser)
+        lines = caption_text.split('\n')
         paragraphs = []
         current_paragraph = []
         
-        for entry in transcript_data:
-            text = entry.get('text', '').strip()
-            if not text:
+        for line in lines:
+            line = line.strip()
+            if not line or line.isdigit() or '-->' in line:
                 continue
                 
-            current_paragraph.append(text)
-            
-            # Start new paragraph after reasonable length or if ends with period
-            if len(' '.join(current_paragraph)) > 150 or text.endswith('.'):
+            current_paragraph.append(line)
+            if len(' '.join(current_paragraph)) > 150 or line.endswith('.'):
                 paragraphs.append(' '.join(current_paragraph))
                 current_paragraph = []
-        
-        # Add any remaining text
+
         if current_paragraph:
             paragraphs.append(' '.join(current_paragraph))
-            
-        print(f"Created {len(paragraphs)} paragraphs")
-        
-        if not paragraphs:
-            raise Exception("No text content found in transcript")
-            
-        return transcript_data, paragraphs
-            
+
+        return caption_track, paragraphs
+
     except Exception as e:
         error_msg = str(e)
         print(f"Error in get_transcript: {error_msg}")
-        # Make the error message more user-friendly
-        if "Transcript is disabled" in error_msg:
+        if "quota" in error_msg.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="API quota exceeded. Please try again later."
+            )
+        elif "No captions found" in error_msg:
             raise HTTPException(
                 status_code=400,
                 detail="This video doesn't have available captions. Please try another video."
-            )
-        elif "No transcripts found" in error_msg:
-            raise HTTPException(
-                status_code=400,
-                detail="No captions found for this video. Please try another video."
             )
         else:
             raise HTTPException(
@@ -137,7 +149,6 @@ async def get_video_summary(request: VideoRequest):
     try:
         print(f"Received URL: {request.videoUrl}")
         
-        # Extract video ID
         video_id = extract_video_id(request.videoUrl)
         print(f"Extracted video ID: {video_id}")
         
@@ -145,7 +156,6 @@ async def get_video_summary(request: VideoRequest):
             raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
         try:
-            # Get transcript
             transcript_data, paragraphs = get_transcript(video_id)
             print(f"Successfully got transcript with {len(paragraphs)} paragraphs")
         except HTTPException as he:
@@ -157,11 +167,9 @@ async def get_video_summary(request: VideoRequest):
                 detail="Failed to process video transcript. Please try another video."
             )
 
-        # Join paragraphs for OpenAI processing
         full_text = ' '.join(paragraphs)
         print("Processing with OpenAI...")
         
-        # Process with OpenAI
         completion = await openai.chat.completions.create(
             model="gpt-4-turbo-preview",
             messages=[{
